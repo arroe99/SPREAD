@@ -1,0 +1,216 @@
+// def dataCenter(config={}):
+
+//     # 静态筛选
+//     STATIC = pd.read_parquet(config['StaticPath'])
+//     STATIC.drop('B_INFO_ISSUERCODE',inplace=True,axis=1)
+//     STATIC = Selector.select(STATIC,config['BondStaticFilters'])
+//     print('STATIC:', slectionString(config['BondStaticFilters']))
+
+//     # 动态筛选
+//     BONDS = pd.read_parquet(config['BondsPath'])
+//     BONDS = Selector.select(BONDS,config['BondDynamicFilters'])
+//     print('BONDS:', slectionString(config['BondDynamicFilters']))
+
+//     # 动态静态结合
+//     df = pd.merge(STATIC, BONDS, on='S_INFO_WINDCODE',validate='one_to_many')  
+
+//     # 信用计算利差
+//     print('\n信用计算利差中')
+//     FILLED_GUOKAI = pd.read_parquet(config['FilledGuokaiPath'])
+//     df['B_ANAL_MATU_CNBD'] = df['B_ANAL_MATU_CNBD'].round(2)
+//     df = pd.merge(df,FILLED_GUOKAI,on=['TRADE_DT','B_ANAL_MATU_CNBD'],how='left')
+//     df['CREDIT_SPREAD'] = df['B_ANAL_YIELD_CNBD'] - df['B_ANAL_YIELD_GUOKAI']
+
+//     print('数据处理完成')
+//     return dropFunctionView
+
+def slectionString(Filters){   // isna 和 isnotna的情况还要改一下  先跳过了
+    // 打印筛选条件
+    print('筛选条件：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){
+            print(filter[0] + ' ' + filter[1] + ' ' + concat(filter[2], ', '))
+        }
+        else {
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),     // ANY VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),     
+    ('IS_FAILURE','==',0)
+]            
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+slectionString(BondStaticFilters)
+slectionString(BondDynamicFilters)
+
+
+// 导入插件
+loadPlugin("/home/vagrant/data/PluginParquet.txt")
+
+// STATIC数据
+STATIC = parquet::loadParquet("/home/vagrant/data/STATIC.parquet")   // 原本21930行
+STATIC.dropColumns!(`B_INFO_ISSUERCODE)
+
+// == != >= <= > <
+filter = ('CATEGORY1','==','信用债')
+// sqlText = concat(filter)
+sqlText = filter[0] + filter[1] + "'" + filter[2] + "'"
+sqlText = 'select * from STATIC where ' + sqlText;sqlText
+temp3 = parseExpr(sqlText).eval()   // temp3 = ::evaluate(parseExpr(sqlText)) => Unrecognized column name 信用债
+// select * from STATIC where CATEGORY1 == '信用债'
+
+// isin
+filter = ('suffix','isin',['IB','SH','SZ'])   // 结果应该是21722行
+select * from STATIC where suffix in filter[2]  // 根据这个来改
+sqlText = 'select * from STATIC where ' + filter[0] + ' in `' + concat(filter[2],'`');sqlText
+temp = parseExpr(sqlText).eval()
+
+// isna 
+filter = ('IS_SUB','isna','')  // 应该会有12726行
+select * from STATIC where isNull(IS_SUB);
+// select * from STATIC where isNull(filter[0]);
+// select * from STATIC where isNull(sqlCol(filter[0]));
+sqlText = 'select * from STATIC where isNull(' + filter[0] + ')';sqlText
+temp = parseExpr(sqlText).eval()
+
+// isnotna
+filter = ('IS_SUB','isnotna','')  // 应该会有 21930-12726 = 9204行
+select * from STATIC where not isNull(IS_SUB);
+sqlText = 'select * from STATIC where not isNull(' + filter[0] + ')';sqlText
+temp = parseExpr(sqlText).eval()
+
+
+// 封装成函数
+def selector(df,Filters){
+    // slectionString(Filters)
+    data = df
+    for(filter in Filters){
+        print(filter)
+        if (filter[1] == '==' || filter[1] == '!=' || filter[1] == '>' || filter[1] == '<' || filter[1] == '>=' || filter[1] == '<='){
+            sqlText = filter[0] + filter[1] + "'" + filter[2] + "'"
+            sqlText = 'select * from data where ' + sqlText
+            data = parseExpr(sqlText).eval()   
+        }
+        else if(filter[1] == 'in' and size(filter[2])>1){
+            sqlText = 'select * from data where ' + filter[0] + ' in `' + concat(filter[2],'`')
+            data = parseExpr(sqlText).eval()
+        }
+        else if (filter[1] == 'isnotna'){
+            sqlText = 'select * from data where not isNull(' + filter[0] + ')'
+            data = parseExpr(sqlText).eval()
+        }
+        else if (filter[1] == 'isna'){
+            sqlText = 'select * from data where isNull(' + filter[0] + ')'
+            data = parseExpr(sqlText).eval()
+        }
+        else print('请重新检查输入筛选条件是否正确')
+    }
+    // return data
+}
+selector(df = STATIC, Filters = BondStaticFilters)
+
+// selector(STATIC, BondStaticFilters) => selector: data = ::evaluate(parseExpr(sqlText)) => Can't find the object with name data
+// parseExpr 函数解析变量时，首先搜索会话中的局部变量，再搜索共享变量，但不会搜索函数体内定义的局部变量。
+
+
+
+
+
+
+// BONDS数据
+BONDS = parquet::loadParquet("/home/vagrant/data/BONDS.parquet")
+
+temp = select * from BONDS where B_ANAL_MATU_CNBD <= 10
+
+
+// sqlText = "select * from BONDS where" + BondDynamicFilters[0][0] + "BondDynamicFilters[0][1]" + "BondDynamicFilters[0][1]"
+temp = parseExpr(sqlText).eval()
+// 试试用sql()函数实现
+
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+whereConditions=[expr(sqlCol(BondDynamicFilters[0][0]), <=, BondDynamicFilters[0][2])] 
+
+whereConditions=[expr(sqlCol(BondDynamicFilters[0][0]),BondDynamicFilters[0][1],BondDynamicFilters[0][2])]
+
+temp = sql(sqlCol("*"), BONDS, whereConditions).eval()
+
+typestr(BondDynamicFilters[0][1])
+
+def deal_data(data, BondDynamicFilters){
+    whereConditions=[expr(sqlCol(BondDynamicFilters[0][0]),<=,BondDynamicFilters[0][2])]
+    return sql(sqlCol("*"), data, whereConditions).eval()
+}
+temp2 = deal_data(BONDS, BondDynamicFilters)
+
+
+// 解决不了<=号的话 换一种新的实现方法
+
+
+
+
+// 第三次尝试：用行索引
+
+
+// isna 
+filter = ('IS_SUB','isna','')  // 应该会有12726行
+select * from STATIC where isNull(IS_SUB);
+
+
+// isnotna
+filter = ('IS_SUB','isnotna','')  // 应该会有 21930-12726 = 9204行
+select * from STATIC where not isNull(IS_SUB);
+sqlText = 'select * from STATIC where not isNull(' + filter[0] + ')';sqlText
+temp = parseExpr(sqlText).eval()
+
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+    slectionString(Filters)
+    data = df
+    // if (isNull(Filters)) return data // 如果过滤条件为空，直接返回数据
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] 
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] 
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] 
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] 
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] 
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    return data[selection]
+}
+
+
+temp = selector(df = STATIC, Filters = BondStaticFilters)
+// temp = selector(df = STATIC, Filters = [('IS_SUB','isna','')])   // 即使只有一个条件 外面也要有个中括号
+// temp = selector(df = BONDS, Filters = BondDynamicFilters)   // 内存不够 Out of memory
+
+
+
+
+
+

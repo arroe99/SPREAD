@@ -1,0 +1,16 @@
+
+
+t = ploadText("/home/vagrant/data/BONDS.csv")
+
+
+// 导入插件
+loadPlugin("/home/vagrant/data/PluginParquet.txt")
+
+
+// 获取文件结构  返回列名和数据类型
+parquet::extractParquetSchema("/home/vagrant/data/BONDS.parquet")
+
+
+// 导入数据
+bond = parquet::loadParquet("/home/vagrant/data/BONDS.parquet")
+

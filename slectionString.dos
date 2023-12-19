@@ -1,0 +1,38 @@
+
+
+type(['IB','SH','SZ']) == STRING VECTOR
+
+x = 3
+type(x) == INT
+
+
+size(['IB','SH','SZ'])
+
+
+
+def slectionString(Filters){
+    print('筛选条件为：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+        else {
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),   // ['IB','SH','SZ']是STRING VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),           
+    ('IS_FAILURE','==',0)                
+]
+slectionString(BondStaticFilters)
+
+
+BondDynamicFilters = [
+    ('B_ANAL_MATU_CNBD','<=', 10)
+]
+slectionString(BondDynamicFilters)
+
