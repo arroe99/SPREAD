@@ -85,7 +85,7 @@ df = ej(STATIC, BONDS, `S_INFO_WINDCODE)
 
 
 // 信用计算利差
-FILLED_GUOKAI = parquet::loadParquet("/home/appadmin/hy/ficc/GuangFa/Results/BONDS.parquet")
+FILLED_GUOKAI = parquet::loadParquet("/home/appadmin/hy/ficc/GuangFa/Results/FILLED_GUOKAI.parquet")
 
 
 update FILLED_GUOKAI set B_ANAL_MATU_CNBD = round(B_ANAL_MATU_CNBD, 2)

@@ -123,7 +123,7 @@ selector(df = STATIC, Filters = BondStaticFilters)
 // BONDS数据
 BONDS = parquet::loadParquet("/home/vagrant/data/BONDS.parquet")
 
-temp = select * from BONDS where B_ANAL_MATU_CNBD <= 10
+// temp = select * from BONDS where B_ANAL_MATU_CNBD <= 10
 
 
 // sqlText = "select * from BONDS where" + BondDynamicFilters[0][0] + "BondDynamicFilters[0][1]" + "BondDynamicFilters[0][1]"

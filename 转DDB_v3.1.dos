@@ -1,0 +1,226 @@
+
+// undef all   // 释放变量
+// loadPlugin("/home/hanyang/luodata/PluginParquet.txt")   // 导入插件，导入一次即可
+
+// 打印筛选条件
+def slectionString(Filters){   
+    print("数据筛选中...请稍等")
+    print('筛选条件：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){     // isin
+            print(filter[0] + ' ' + filter[1] + ' ' + concat(filter[2], ', '))
+        }
+        else if (isNull(filter[2])){   // isna、isnotna
+            print(filter[0] + ' ' + filter[1])
+        }
+        else {   // "==","!=",">=","<=",">","<"
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+
+
+// 筛选数据
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+    slectionString(Filters)
+    data = df
+    // if (isNull(Filters)) return data // 如果过滤条件为空，直接返回数据  会报错 待实现
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '=='){
+            selection = selection && data[filter[0]] == filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] && !isNull(data[filter[0]])
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    data = data[selection]
+    // data = data[each(isValid, data.values()).rowAnd()]   // 删除含有缺失值的行
+    return data
+}
+
+
+// 导入数据
+// 1、STATIC数据
+STATIC = parquet::loadParquet("/home/hanyang/luodata/STATIC.parquet")   // 原本21930行
+STATIC.dropColumns!(`B_INFO_ISSUERCODE)   // 好像没有必要删这一列
+
+///2、BONDS数据
+BONDS = parquet::loadParquet("/home/hanyang/luodata/BONDS.parquet") 
+
+///3、国开数据
+FILLED_GUOKAI = parquet::loadParquet("/home/hanyang/luodata/FILLED_GUOKAI.parquet")
+
+// 筛选条件
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),     // ANY VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),     
+    ('IS_FAILURE','==',0)
+]            
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+// 进行数据筛选
+STATIC = selector(df = STATIC, Filters = BondStaticFilters)
+BONDS = selector(df = BONDS, Filters = BondDynamicFilters)   
+
+// 合并静态动态数据  并计算信用利差
+df = ej(STATIC, BONDS, `S_INFO_WINDCODE) // 这个表里的B_ANAL_YIELD_CNBD	是BONDS数据里的 有四位小数
+df['B_ANAL_MATU_CNBD'] = round(df['B_ANAL_MATU_CNBD'], 2)   // 或者 update df set B_ANAL_MATU_CNBD = round(B_ANAL_MATU_CNBD, 2)
+df = lj(df, FILLED_GUOKAI, `TRADE_DT`B_ANAL_MATU_CNBD)
+df = select *, B_ANAL_YIELD_CNBD - B_ANAL_YIELD_GUOKAI as CREDIT_SPREAD from df 
+// sum(!isNull(df['S_INFO_COMPIND_NAME1']))
+
+
+
+
+// 封装成函数
+def dataCenter(StaticPath, BondsPath, FilledGuokaiPath, BondStaticFilters, BondDynamicFilters){
+
+    // 静态筛选
+    STATIC = parquet::loadParquet(StaticPath)
+    STATIC.dropColumns!(`B_INFO_ISSUERCODE)   // 好像没有必要删这一列
+    STATIC = selector(df = STATIC, Filters = BondStaticFilters)
+
+    // 动态筛选
+    BONDS = parquet::loadParquet(BondsPath) 
+    BONDS = selector(df = BONDS, Filters = BondDynamicFilters)   
+
+    // 动态静态结合，并计算信用利差
+    df = ej(STATIC, BONDS, `S_INFO_WINDCODE) 
+    df['B_ANAL_MATU_CNBD'] = round(df['B_ANAL_MATU_CNBD'], 2)  
+    FILLED_GUOKAI = parquet::loadParquet(FilledGuokaiPath)
+    df = lj(df, FILLED_GUOKAI, `TRADE_DT`B_ANAL_MATU_CNBD)
+    df = select *, B_ANAL_YIELD_CNBD - B_ANAL_YIELD_GUOKAI as CREDIT_SPREAD from df 
+
+    print("数据处理完成")
+    return df
+}
+
+// 设置参数
+StaticPath = "/home/hanyang/luodata/STATIC.parquet"
+BondsPath = "/home/hanyang/luodata/BONDS.parquet"
+FilledGuokaiPath = "/home/hanyang/luodata/FILLED_GUOKAI.parquet"
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),     // ANY VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),     
+    ('IS_FAILURE','==',0)
+]            
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+// 调用函数
+df = dataCenter(StaticPath, BondsPath, FilledGuokaiPath, BondStaticFilters, BondDynamicFilters)
+
+
+// Part2 时序图像绘制 数据准备
+division_label = 'S_INFO_COMPIND_NAME1' 
+Filters = [('BOND_TYPE','==','产业债')]
+date = '20230821'
+method = 0 
+data = df.copy()
+data = data[!isNull(data['S_INFO_COMPIND_NAME1'])]   // pay attention
+
+if (isNull(division_label)){
+    data['LABEL'] = 'ALL'
+}
+else {
+    data['LABEL'] = data[division_label]
+}
+// sum(!isNull(data['LABEL']))
+data = selector(data, Filters)
+data = select * from data order by TRADE_DT, LABEL    // 増序排序
+index = select distinct TRADE_DT, LABEL from data
+// index = index[each(isValid, index.values()).rowAnd()]     // 因为data数据和python中不一样，需要对缺失值进行删除。 comment2：上面对data先删了缺失值 所以这里不用了
+labels = select distinct LABEL from data
+// labels = labels[each(isValid, labels.values()).rowAnd()]   
+dailyspread = index
+
+// 1、简单平均
+temp = select mean(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  // 结果会自动加上grope by的字段，所以用exce没用，还是表
+dailyspread['CREDIT_SPREAD_0'] = temp[,2].values()[0]    // 解决方法 用.values()把数据取出来
+
+// 想法2 先算值 然后join 到dailyspread里  可以算一种  但是多种的话 select的时候会出问题
+// update data set CREDIT_SPREAD_0 = mean(CREDIT_SPREAD) * 100 context by TRADE_DT, LABEL
+// dailyspread = lsj(dailyspread, data,`TRADE_DT`LABEL)
+// dailyspread = select TRADE_DT, LABEL, CREDIT_SPREAD_0 from dailyspread
+
+// 2、中位数
+temp = select median(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  
+dailyspread['CREDIT_SPREAD_1'] = temp[,2].values()[0]    
+
+// 3、余额加权平均
+total = select TRADE_DT, LABEL, sum(B_ANAL_RESIDUALPRI) as B_ANAL_RESIDUALPRI_TOTAL from data group by TRADE_DT, LABEL
+temp = lj(data, total, `TRADE_DT`LABEL)
+update temp set CREDIT_SPREAD = B_ANAL_RESIDUALPRI / B_ANAL_RESIDUALPRI_TOTAL * CREDIT_SPREAD  // 和原来的代码有点差别，原来的代码会把data变掉
+temp = select sum(CREDIT_SPREAD) * 100 as CREDIT_SPREAD_2 from temp group by TRADE_DT, LABEL
+dailyspread['CREDIT_SPREAD_2'] = temp[,2].values()[0] 
+
+
+
+// 封装成函数
+def preparePlotDate(df, Filters, division_label = '', method = [0]){
+
+    data = df.copy()
+    data = data[!isNull(data[division_label])]
+
+    if (isNull(division_label)){
+        data['LABEL'] = 'ALL'
+    }
+    else {
+        data['LABEL'] = data[division_label]
+    }
+    // sum(!isNull(data['LABEL']))
+
+    data = selector(data, Filters)
+    data = select * from data order by TRADE_DT, LABEL
+    index = select distinct TRADE_DT, LABEL from data
+    labels = select distinct LABEL from data
+    dailyspread = index
+
+    if(0 in method){
+        temp = select mean(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  
+        dailyspread['CREDIT_SPREAD_0'] = temp[,2].values()[0] 
+    }
+    if(1 in method){
+        temp = select median(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  
+        dailyspread['CREDIT_SPREAD_1'] = temp[,2].values()[0]    
+    }
+    if(2 in method){
+        total = select TRADE_DT, LABEL, sum(B_ANAL_RESIDUALPRI) as B_ANAL_RESIDUALPRI_TOTAL from data group by TRADE_DT, LABEL
+        temp = lj(data, total, `TRADE_DT`LABEL)
+        update temp set CREDIT_SPREAD = B_ANAL_RESIDUALPRI / B_ANAL_RESIDUALPRI_TOTAL * CREDIT_SPREAD 
+        temp = select sum(CREDIT_SPREAD) * 100 as CREDIT_SPREAD_2 from temp group by TRADE_DT, LABEL
+        dailyspread['CREDIT_SPREAD_2'] = temp[,2].values()[0]     
+    }
+    return dailyspread
+}
+
+// 函数调用
+dailyspread2 = preparePlotDate(df = df, Filters = [('BOND_TYPE','==','产业债')], division_label = 'S_INFO_COMPIND_NAME1' , method = [0,1,2])
+

@@ -3,7 +3,13 @@ import numpy as np
 import re
 import math
 import copy
-from progressbar import progressbar as pbar
+# from progressbar import progressbar as pbar
+from tqdm import tqdm
+from progressbar import *
+pbar = ProgressBar()
+# pbar.max_error = False
+# pbar = ProgressBar(max_error = False)
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import Selector
@@ -16,7 +22,6 @@ class BondAnalyzer():
     def __init__(self,config={}):
         pass
         
-
     # 三表合并
     def dataCenter(self,config={}):
         # config = {
@@ -56,7 +61,7 @@ class BondAnalyzer():
         plot= config['plot']
         pos_res = []
         neg_res = []
-        for bond_code in pbar(bond_codes):
+        for bond_code in tqdm(bond_codes):
             single_bond = data.loc[bond_code]
             single_bond = single_bond.loc[single_bond['TRADE_DT']<=TODAY]
             if single_bond.shape[0] < ROLLING_WINDOW:

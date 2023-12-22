@@ -1,0 +1,162 @@
+// undef all 
+
+// 打印筛选条件
+def slectionString(Filters){   // isna 和 isnotna的情况还要改一下  先跳过了
+    print('筛选条件：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){
+            print(filter[0] + ' ' + filter[1] + ' ' + concat(filter[2], ', '))
+        }
+        else {
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+
+// 筛选数据
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+    slectionString(Filters)
+    data = df
+    // if (isNull(Filters)) return data // 如果过滤条件为空，直接返回数据
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '=='){
+            selection = selection && data[filter[0]] == filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] && !isNull(data[filter[0]])
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    data = data[selection]
+    // data = data[each(isValid, data.values()).rowAnd()]   // 删除含有缺失值的行
+    return data
+}
+
+
+// 导入插件
+// loadPlugin("/home/hanyang/luodata/PluginParquet.txt")
+
+// 1、STATIC数据
+STATIC = parquet::loadParquet("/home/hanyang/luodata/STATIC.parquet")   // 原本21930行
+STATIC.dropColumns!(`B_INFO_ISSUERCODE)   // 好像没有必要删这一列
+
+///2、BONDS数据
+BONDS = parquet::loadParquet("/home/hanyang/luodata/BONDS.parquet") 
+
+// // 排查和python结果不同的原因
+// temp = select * from BONDS where B_ANAL_MATU_CNBD <= 10
+// sum(!isNull(BONDS.B_ANAL_MATU_CNBD))  // 14837691
+// sum(isNull(BONDS.B_ANAL_MATU_CNBD))   // 290
+// sum(!isNull(temp.B_ANAL_MATU_CNBD))   // 非Null的个数 11014822
+// sum(isNull(temp.B_ANAL_MATU_CNBD))    // Null的个数 290
+
+// // 代码修改调试   结果最后应该是11014822
+// filter = ('B_ANAL_MATU_CNBD','<=', 10)
+// selection = take(true, BONDS.rows())
+// selection = selection && BONDS[filter[0]] <= filter[2] && !isNull(BONDS[filter[0]])
+// temp = BONDS[selection]
+
+///3、国开数据
+FILLED_GUOKAI = parquet::loadParquet("/home/hanyang/luodata/FILLED_GUOKAI.parquet")
+update FILLED_GUOKAI set B_ANAL_MATU_CNBD = round(B_ANAL_MATU_CNBD, 2)  // 好像本来就两位小数
+
+// 筛选条件
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),     // ANY VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),     
+    ('IS_FAILURE','==',0)
+]            
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+STATIC = selector(df = STATIC, Filters = BondStaticFilters)
+// temp = selector(df = STATIC, Filters = [('IS_SUB','isna','')])   // 即使只有一个条件 调用函数的时候外面也要有个中括号
+BONDS = selector(df = BONDS, Filters = BondDynamicFilters)   
+
+
+// 合并静态动态数据
+df = ej(STATIC, BONDS, `S_INFO_WINDCODE)
+
+// 信用计算利差
+df = lj(df, FILLED_GUOKAI, `TRADE_DT`B_ANAL_MATU_CNBD)
+df = select *, B_ANAL_YIELD_CNBD - B_ANAL_YIELD_GUOKAI as CREDIT_SPREAD from df 
+
+
+sum(!isNull(df.CREDIT_SPREAD))   // 非空只有10459条数据 Python里有823888行 
+
+// plot(df.CREDIT_SPREAD, df.B_INFO_MATURITYDATE)
+
+
+
+
+
+
+// Part2 时序图像绘制
+
+division_label = 'S_INFO_COMPIND_NAME1' 
+Filters = [('BOND_TYPE','==','产业债')]
+date = '20230821'
+
+data = df.copy()
+
+// sum(!isNull(data[division_label]))
+
+
+
+if (isNull(division_label)){
+    data['LABEL'] = 'ALL'
+}
+else {
+    data['LABEL'] = data[division_label]
+}
+
+method = 0 
+
+
+data = selector(data, Filters)   // 与Python结果行数不同，应该是有关缺失值的差别，往前排查
+
+data = select * from data order by TRADE_DT, LABEL
+
+
+index = select distinct TRADE_DT, LABEL from data
+// index = index[each(isValid, index.values()).rowAnd()]     
+
+
+labels = select distinct LABEL from data
+// labels = labels[each(isValid, labels.values()).rowAnd()]   
+
+
+
+// Python代码：    dailyspread[f'CREDIT_SPREAD_0'] = data.groupby(['TRADE_DT','LABEL'])['CREDIT_SPREAD'].mean() *100  
+index['CREDIT_SPREAD_0'] = exec mean(CREDIT_SPREAD) * 100 as CREDIT_SPREAD_0 from data group by TRADE_DT, LABEL
+
+
+// 先算值 然后join 到index里
+// update data set CREDIT_SPREAD_0 = mean(CREDIT_SPREAD) * 100 context by TRADE_DT, LABEL  
+// temp = lsj(index, data,`TRADE_DT`LABEL)
+// temp = select TRADE_DT....

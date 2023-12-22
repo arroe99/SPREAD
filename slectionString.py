@@ -30,7 +30,8 @@ BondStaticFilters = [
     ('suffix','isin',['IB','SH','SZ']),     # 默认选择标准代码  21722    原本21930行
     ('CATEGORY1','==','信用债'),            # 默认选择信用债，不含利率债、同业存单、ABS、可转债  14673
     ('isPerpetualBonds','==',0),            # 剔除：永续债    14568
-    ('IS_FAILURE','==',0)                   # 剔除：发行失败  14039
+    ('IS_FAILURE','==',0),                   # 剔除：发行失败  14039
+    ('B_INFO_GUARTYPE','isna','')
 ]    
 slectionString(BondStaticFilters)
 

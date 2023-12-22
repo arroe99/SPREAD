@@ -1,0 +1,150 @@
+
+// undef all   // 释放变量
+// loadPlugin("/home/hanyang/luodata/PluginParquet.txt")   // 导入插件，导入一次即可
+
+// 打印筛选条件
+def slectionString(Filters){   
+    print("\n数据筛选中...请稍等")
+    print('筛选条件：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){     // isin
+            print(filter[0] + ' ' + filter[1] + ' ' + concat(filter[2], ', '))
+        }
+        else if (isNull(filter[2])){   // isna、isnotna
+            print(filter[0] + ' ' + filter[1])
+        }
+        else {   // "==","!=",">=","<=",">","<"
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+
+
+// 筛选数据
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+
+    if (!(typestr(Filters) == 'ANY VECTOR')) return df 
+
+    data = df
+    slectionString(Filters)
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '=='){
+            selection = selection && data[filter[0]] == filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] && !isNull(data[filter[0]])
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    data = data[selection]
+    // data = data[each(isValid, data.values()).rowAnd()]   // 删除含有缺失值的行
+    return data
+}
+
+
+def dataCenter(StaticPath, BondsPath, FilledGuokaiPath, BondStaticFilters, BondDynamicFilters){
+
+    // 静态筛选
+    STATIC = parquet::loadParquet(StaticPath)
+    STATIC.dropColumns!(`B_INFO_ISSUERCODE)   // 好像没有必要删这一列
+    STATIC = selector(df = STATIC, Filters = BondStaticFilters)
+
+    // 动态筛选
+    BONDS = parquet::loadParquet(BondsPath) 
+    BONDS = selector(df = BONDS, Filters = BondDynamicFilters)   
+
+    // 动态静态结合，并计算信用利差
+    df = ej(STATIC, BONDS, `S_INFO_WINDCODE) 
+    df['B_ANAL_MATU_CNBD'] = round(df['B_ANAL_MATU_CNBD'], 2)  
+    FILLED_GUOKAI = parquet::loadParquet(FilledGuokaiPath)
+    df = lj(df, FILLED_GUOKAI, `TRADE_DT`B_ANAL_MATU_CNBD)
+    df = select *, B_ANAL_YIELD_CNBD - B_ANAL_YIELD_GUOKAI as CREDIT_SPREAD from df 
+
+    print("数据处理完成")
+    return df
+}
+
+
+def preparePlotData(df, Filters, division_label = '', method = [0]){   // 截面日期数据未实现
+
+    data = df.copy()
+    data = data[!isNull(data[division_label])]
+
+    if (isNull(division_label)){
+        data['LABEL'] = 'ALL'
+    }
+    else {
+        data['LABEL'] = data[division_label]
+    }
+    // sum(!isNull(data['LABEL']))
+
+    data = selector(data, Filters)
+    data = select * from data order by TRADE_DT, LABEL
+    index = select distinct TRADE_DT, LABEL from data
+    labels = select distinct LABEL from data
+    dailyspread = index
+
+    if(0 in method){
+        temp = select mean(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  
+        dailyspread['CREDIT_SPREAD_0'] = temp[,2].values()[0] 
+    }
+    if(1 in method){
+        temp = select median(CREDIT_SPREAD) * 100 from data group by TRADE_DT, LABEL  
+        dailyspread['CREDIT_SPREAD_1'] = temp[,2].values()[0]    
+    }
+    if(2 in method){
+        total = select TRADE_DT, LABEL, sum(B_ANAL_RESIDUALPRI) as B_ANAL_RESIDUALPRI_TOTAL from data group by TRADE_DT, LABEL
+        temp = lj(data, total, `TRADE_DT`LABEL)
+        update temp set CREDIT_SPREAD = B_ANAL_RESIDUALPRI / B_ANAL_RESIDUALPRI_TOTAL * CREDIT_SPREAD 
+        temp = select sum(CREDIT_SPREAD) * 100 as CREDIT_SPREAD_2 from temp group by TRADE_DT, LABEL
+        dailyspread['CREDIT_SPREAD_2'] = temp[,2].values()[0]     
+    }
+    return dailyspread
+}
+
+// 设置参数
+StaticPath = "/home/hanyang/luodata/STATIC.parquet"
+BondsPath = "/home/hanyang/luodata/BONDS.parquet"
+FilledGuokaiPath = "/home/hanyang/luodata/FILLED_GUOKAI.parquet"
+BondStaticFilters = [
+    ('suffix','isin',['IB','SH','SZ']),     // ANY VECTOR
+    ('CATEGORY1','==','信用债'),          
+    ('isPerpetualBonds','==',0),     
+    ('IS_FAILURE','==',0)
+]            
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+df = dataCenter(StaticPath, BondsPath, FilledGuokaiPath, BondStaticFilters, BondDynamicFilters)
+
+isNull(BondStaticFilters)
+
+Filters = [('BOND_TYPE','==','产业债')]
+division_label = 'S_INFO_COMPIND_NAME1'
+method = [0,1,2]
+
+dailyspread = preparePlotData(df, Filters, division_label , method)
