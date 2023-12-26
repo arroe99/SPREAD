@@ -351,7 +351,7 @@ class BondAnalyzer():
         ax.legend(loc=0, ncol=1, bbox_to_anchor=[1.02,1,0,0])
         plt.show() 
     
-  
+
 
 
     

@@ -4,7 +4,7 @@ Created on Fri Dec 22 10:12:04 2023
 
 @author: chengyi.luo
 """
-
+#%%
 import sys
 # sys.path.insert(0, '/home/gfzg/workspace/数据下载/Wind/Packages')
 # sys.path.insert(0, '/home/gfzg/workspace/债券分析/Packages')
@@ -27,7 +27,7 @@ import janitor
 # 把ConfigParser改成configparse
 # from werkzeug.contrib.fixers import ProxyFix 改成 from werkzeug.middleware.proxy_fix import ProxyFix
 import time
-from progressbar import progressbar as pbar # 该用pg进度条了
+# from progressbar import progressbar as pbar # 该用pg进度条了
 
 # import progressbar
 # bar = progressbar.ProgressBar()
@@ -47,7 +47,7 @@ plt.rcParams["font.sans-serif"]=["SimHei"] # 设置字体
 plt.rcParams["axes.unicode_minus"]=False   # 该语句解决图像中的“-”负号的乱码问题
 
 
-#%%
+#%%  原来调用类的代码
 
 # reload(Bonder)    # 重新载入之前载入的模块
 # 初始化债券分析框架 Bonder
@@ -129,13 +129,13 @@ alarmed_neg_bond_codes = ALARMRES['alarmed_neg_bond_codes']
 ALARMED_POS_BONDS = ALARMRES['ALARMED_POS_BONDS']
 ALARMED_NEG_BONDS = ALARMRES['ALARMED_NEG_BONDS']
 
-#%%
+#%% 类拆成函数
 
 def showSingleBond(data, bond_codes=[], YIELD_CHANGE_PERIOD=7,QUANTILE=0.95,ROLLING_WINDOW=250,ALARM_PERIOD=20,TODAY='20230921',config={'plot':True,'plot_abs':True}):
     plot= config['plot']
     pos_res = []
     neg_res = []
-    for bond_code in pbar(bond_codes):
+    for bond_code in tqdm(bond_codes):
         single_bond = data.loc[bond_code]
         single_bond = single_bond.loc[single_bond['TRADE_DT']<=TODAY]
         if single_bond.shape[0] < ROLLING_WINDOW:
@@ -157,7 +157,7 @@ def showSingleBond(data, bond_codes=[], YIELD_CHANGE_PERIOD=7,QUANTILE=0.95,ROLL
             if not plot_abs:
                 sns.lineplot(x=single_bond['TRADE_DT_DATETIME'], y=-quantile, ax = ax,linewidth=2,color='blue', linestyle='--')
             ax.set_title(f'当天存续债{bond_code}历史信用利差走势图')
-            ax.set_ylabel(f'{self.TODAY}过去{YIELD_CHANGE_PERIOD}天累计变动 BP')
+            ax.set_ylabel(f'{TODAY}过去{YIELD_CHANGE_PERIOD}天累计变动 BP')
             ax.set_xlabel(f'日期')
             ax.grid()
             plt.show()
@@ -189,7 +189,7 @@ def initBondAlarms(data,YIELD_CHANGE_PERIOD=7,QUANTILE=0.95,ROLLING_WINDOW=250,A
     
     data = copy.deepcopy(data)
     data = data.sort_values(['S_INFO_WINDCODE','TRADE_DT']).set_index('S_INFO_WINDCODE')   #wind数据库标识码
-    print(f'开始检测最近{ALARM_PERIOD}日出现超越{YIELD_CHANGE_PERIOD}日累计估值收益变动的绝对值在历史{ROLLING_WINDOW}日内的{QUANTILE}分位数的{self.TODAY}债券')
+    print(f'开始检测最近{ALARM_PERIOD}日出现超越{YIELD_CHANGE_PERIOD}日累计估值收益变动的绝对值在历史{ROLLING_WINDOW}日内的{QUANTILE}分位数的{TODAY}债券')
     
     # 今天有哪些债券需要检验
     bond_codes = data.loc[
@@ -232,14 +232,6 @@ def initBondAlarms(data,YIELD_CHANGE_PERIOD=7,QUANTILE=0.95,ROLLING_WINDOW=250,A
 
 #%% 类拆成函数往下运行
 
-YIELD_CHANGE_PERIOD=7
-QUANTILE=0.95
-ROLLING_WINDOW=250
-ALARM_PERIOD=20
-TODAY='20230921'
-config={'plot':True,'plot_abs':True}
-
-
 # Mac 3500个债 约90s Windows较慢 4mins30s
 # 债券累计存续时常小于250天不预警
 YIELD_CHANGE_PERIOD=7
@@ -249,7 +241,7 @@ ALARM_PERIOD=20
 alarmConfig = {
     'TODAY':'20230821' #扫描哪天的存续债
 }
-ALARMRES = BondAnalyzer.initBondAlarms(
+ALARMRES = initBondAlarms(
     df,
     YIELD_CHANGE_PERIOD=YIELD_CHANGE_PERIOD, # 累计收益周期
     QUANTILE=QUANTILE, # 预警分位数
@@ -257,3 +249,110 @@ ALARMRES = BondAnalyzer.initBondAlarms(
     ALARM_PERIOD=ALARM_PERIOD, # 预警窗口
     config=alarmConfig
 )
+
+
+
+
+#%% 热力图的函数
+        
+# 绘制热力图
+def getHeatMap(data,column,config):
+    alarmres = config['alarmres']
+    TODAY = config['TODAY']
+    df_alarmed_pos_bond = alarmres['df_alarmed_pos_bond']
+    df_alarmed_neg_bond = alarmres['df_alarmed_neg_bond']
+    alarmed_pos_bond_codes = alarmres['alarmed_pos_bond_codes']
+    alarmed_neg_bond_codes = alarmres['alarmed_neg_bond_codes']
+    ALARMED_POS_BONDS = alarmres['ALARMED_POS_BONDS']
+    ALARMED_NEG_BONDS = alarmres['ALARMED_NEG_BONDS']
+
+    filters = []
+    if 'filters' in config.keys():
+        filters = config['filters']
+
+    if isinstance(column,list):
+        temp = None
+        for c in column:
+            if temp is None:
+                temp = data[c].fillna('NaN').astype(str)
+            else:
+                temp = temp + '_' + data[c].fillna('NaN').astype(str)
+        newc = 'CUSTOMIZED_' + ('_'.join(list(map(str, column))))
+        data[newc] = temp
+        column = newc
+        
+    def getCountTable(data, column):
+        table = data[column].value_counts()
+        total = table.sum()
+        printdf = pd.DataFrame(index=pd.Series(list(table.keys()),name=column), columns=['count','percentageInAlarm'])
+        for each in table.keys():
+            printdf.loc[each] = [table[each], table[each]/total]
+        return printdf
+
+
+    data = data.loc[
+        (data['TRADE_DT'] == TODAY)
+    ]
+    ALARMED_BONDS_TOTAL = data.groupby([column])['S_INFO_WINDCODE'].count().to_frame('count')
+    
+    ALARMED_POS_BONDS_NOW = data.loc[
+        (data['S_INFO_WINDCODE'].isin(alarmed_pos_bond_codes))  
+    ]
+    ALARMED_POS_BONDS_NOW = Selector.select(ALARMED_POS_BONDS_NOW,filters)
+    print('ALARMED_POS_BONDS_NOW:', Selector.slectionString(filters))
+
+    
+    print(f'存在{ALARMED_POS_BONDS_NOW[column].isna().sum()}条正向突破预警线债券因缺失分类而不考虑进统计数据中')
+    ALARMED_POS_BONDS_STATISTICS = getCountTable(data = ALARMED_POS_BONDS_NOW, column=column)
+    ALARMED_POS_BONDS_STATISTICS = ALARMED_POS_BONDS_STATISTICS.apply(pd.to_numeric) 
+    ALARMED_POS_BONDS_STATISTICS['recentChangeDirection'] = '+'
+    POSTOTAL = ALARMED_POS_BONDS_STATISTICS['count'].sum()
+    # print(tabulate(ALARMED_POS_BONDS_STATISTICS, headers='keys', tablefmt='psql'))
+    
+
+    ALARMED_NEG_BONDS_NOW = data.loc[
+        (data['S_INFO_WINDCODE'].isin(alarmed_neg_bond_codes))
+    ]
+    ALARMED_NEG_BONDS_NOW = Selector.select(ALARMED_NEG_BONDS_NOW,filters)
+    print('ALARMED_NEG_BONDS_NOW:', Selector.slectionString(filters))
+
+
+    
+    print(f'存在{ALARMED_NEG_BONDS_NOW[column].isna().sum()}条反向突破预警线债券因缺失分类而不考虑进统计数据中')
+    ALARMED_NEG_BONDS_STATISTICS = getCountTable(data = ALARMED_NEG_BONDS_NOW, column=column)
+    ALARMED_NEG_BONDS_STATISTICS = ALARMED_NEG_BONDS_STATISTICS.apply(pd.to_numeric)
+    NEGTOTAL = ALARMED_NEG_BONDS_STATISTICS['count'].sum()
+
+    ALARMED_NEG_BONDS_STATISTICS = -ALARMED_NEG_BONDS_STATISTICS
+    ALARMED_NEG_BONDS_STATISTICS['recentChangeDirection'] = '-'
+    # print(tabulate(ALARMED_NEG_BONDS_STATISTICS, headers='keys', tablefmt='psql'))
+
+    PRESSION = pd.DataFrame(index=pd.Series(['+','-'],name='涨跌比'),columns=['count','percentageInAlarm'])
+
+
+    c = ["darkgreen","green","palegreen","white", "lightcoral","red","darkred"]
+    v = [0,.15,.4,.5,0.6,.9,1.]
+    l = list(zip(v,c))
+    cmap=LinearSegmentedColormap.from_list('rg',l, N=256)
+
+    
+    PRESSION.loc['+',:] = [POSTOTAL,POSTOTAL/(POSTOTAL+NEGTOTAL)]
+    PRESSION.loc['-',:] = [NEGTOTAL,NEGTOTAL/(POSTOTAL+NEGTOTAL)]
+
+
+    ALARMED_POS_BONDS_STATISTICS['industryTotalCount'] = ALARMED_BONDS_TOTAL['count']
+    ALARMED_POS_BONDS_STATISTICS['percentageInIndustry'] = ALARMED_POS_BONDS_STATISTICS['count'] / ALARMED_BONDS_TOTAL['count']
+    ALARMED_NEG_BONDS_STATISTICS['industryTotalCount'] = ALARMED_BONDS_TOTAL['count']
+    ALARMED_NEG_BONDS_STATISTICS['percentageInIndustry'] = ALARMED_NEG_BONDS_STATISTICS['count'] / ALARMED_BONDS_TOTAL['count']
+
+    
+    PRESSION = PRESSION.reset_index()
+    
+    ALARM_SUMMARY = pd.concat([ALARMED_POS_BONDS_STATISTICS,ALARMED_NEG_BONDS_STATISTICS]).sort_values('percentageInAlarm',ascending=False).reset_index()
+    return {
+        'ALARM_PRESSION': PRESSION.style.background_gradient(vmin=0, vmax=1, cmap=cmap, subset=['percentageInAlarm']),
+        'ALARM_SUMMARY': ALARM_SUMMARY[[
+            column,'recentChangeDirection','count','percentageInAlarm','percentageInIndustry','industryTotalCount'
+        ]].style.background_gradient(vmin=-1, vmax=1, cmap=cmap, subset=['count','percentageInAlarm','percentageInIndustry']),
+    }
+        
