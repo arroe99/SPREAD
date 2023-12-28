@@ -1,0 +1,144 @@
+
+// undef all   // 释放变量
+try{ loadPlugin("/home/hanyang/luodata/PluginParquet.txt") }catch(ex){print ex}
+
+
+// 打印筛选条件
+def slectionString(Filters){   
+    print("数据筛选中...请稍等")
+    print('筛选条件：')
+    for(filter in Filters){
+        if (size(filter[2]) > 1){     // isin
+            print(filter[0] + ' ' + filter[1] + ' ' + concat(filter[2], ', '))
+        }
+        else if (isNull(filter[2])){   // isna、isnotna
+            print(filter[0] + ' ' + filter[1])
+        }
+        else {   // "==","!=",">=","<=",">","<"
+            print(filter[0] + ' ' + filter[1] + ' ' + filter[2])
+        }
+    }
+}
+
+
+// 筛选数据
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+    slectionString(Filters)
+    data = df
+    // if (isNull(Filters)) return data // 如果过滤条件为空，直接返回数据  会报错 待实现
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '=='){
+            selection = selection && data[filter[0]] == filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] && !isNull(data[filter[0]])
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] && !isNull(data[filter[0]])
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    data = data[selection]
+    // data = data[each(isValid, data.values()).rowAnd()]   // 删除含有缺失值的行
+    return data
+}
+
+
+// 筛选数据
+def selector(df, Filters){    // 改进方向： 里面嵌一层函数
+    slectionString(Filters)
+    data = df
+    // if (isNull(Filters)) return data // 如果过滤条件为空，直接返回数据  会报错 待实现
+    selection = take(true, data.rows())
+    for(filter in Filters){
+        if (filter[1]=='isin'){
+            selection = selection && data[filter[0]] in filter[2]
+        }
+        else if (filter[1] == 'isna'){
+            print(filter[1])
+            selection = selection && isNull(data[filter[0]])
+        }
+        else if (filter[1] == 'isnotna'){
+            selection = selection && not isNull(data[filter[0]])
+        }
+        else if (filter[1] == '=='){
+            selection = selection && data[filter[0]] == filter[2] 
+        }
+        else if (filter[1] == '!='){
+            selection = selection && data[filter[0]] != filter[2] 
+        }
+        else if (filter[1] == '>='){
+            selection = selection && data[filter[0]] >= filter[2] 
+        }
+        else if (filter[1] == '<='){
+            selection = selection && data[filter[0]] <= filter[2] 
+        }
+        else if (filter[1] == '>'){
+            selection = selection && data[filter[0]] > filter[2] 
+        }
+        else if (filter[1] == '<'){
+            selection = selection && data[filter[0]] < filter[2] 
+        }
+        else {
+            print('请检查逻辑符号，有效逻辑符号为["==","!=",">=","<=",">","<","isin","isna","isnotna"]')
+        }
+    }
+    data = data[selection]
+    // data = data[each(isValid, data.values()).rowAnd()]   // 删除含有缺失值的行
+    return data
+}
+
+
+
+BONDS = parquet::loadParquet("/home/hanyang/luodata/BONDS.parquet") 
+sum(!isNull(BONDS.B_ANAL_MATU_CNBD))  // 14837691
+sum(isNull(BONDS.B_ANAL_MATU_CNBD))   // 290
+
+temp = BONDS[BONDS['B_ANAL_MATU_CNBD']<=10]
+sum(!isNull(temp.B_ANAL_MATU_CNBD))   // 非Null的个数 11014822
+sum(isNull(temp.B_ANAL_MATU_CNBD))    // Null的个数 290
+
+NULL < 10
+
+// 读取BONDS数据
+BONDS = parquet::loadParquet("/home/hanyang/luodata/BONDS.parquet") 
+print(BONDS.shape())
+
+// 筛选条件      
+BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
+
+// 进行数据筛选
+BONDS = selector(df = BONDS, Filters = BondDynamicFilters)   
+
+print(BONDS.shape())
+
+
+
+BONDS = parquet::loadParquet("/home/hanyang/luodata/BONDS.parquet") 
+temp = select * from BONDS where B_ANAL_MATU_CNBD <= 10
+temp.shape()
+
+
+BONDS[BONDS['B_ANAL_MATU_CNBD']<=10].shape()

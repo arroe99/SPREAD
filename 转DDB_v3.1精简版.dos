@@ -1,6 +1,7 @@
 
 // undef all   // 释放变量
-// loadPlugin("/home/hanyang/luodata/PluginParquet.txt")   // 导入插件，导入一次即可
+try{ loadPlugin("/home/hanyang/luodata/PluginParquet.txt") }catch(ex){print ex}  // 导入插件，导入一次即可
+  
 
 // 打印筛选条件
 def slectionString(Filters){   
@@ -148,3 +149,7 @@ division_label = 'S_INFO_COMPIND_NAME1'
 method = [0,1,2]
 
 dailyspread = preparePlotData(df, Filters, division_label , method)
+
+
+
+

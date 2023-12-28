@@ -1,0 +1,27 @@
+// STATIC数据
+STATIC = loadTable("dfs://A_STATIC",`pt)
+STATIC = select * from STATIC
+select * from STATIC limit 10  // 查验是否存储成功
+
+// GUOKAI数据
+// 读取表  注意和原表不同了，需要把TRADE_DT从日期变回string
+FILLED_GUOKAI = loadTable('dfs://A_GUOKAI',`pt1)
+select * from pt limit 10
+// update FILLED_GUOKAI set TRADE_DT = strReplace(string(TRADE_DT), ".", "")   // update失败
+// pt = select B_ANAL_MATU_CNBD, B_ANAL_YIELD_GUOKAI , strReplace(string(TRADE_DT), ".", "") as TRADE_DT from pt // 变量少时可以这样写
+
+FILLED_GUOKAI = select * , strReplace(string(TRADE_DT), ".", "") from FILLED_GUOKAI
+FILLED_GUOKAI.dropColumns!(`TRADE_DT)
+FILLED_GUOKAI.rename!(`strReplace, `TRADE_DT)
+
+
+
+// 读取BONDS数据
+BONDS = loadTable("dfs://A_BONDS",`pt2)
+select count(*) from BONDS
+select * from BONDS limit 10  // 查验是否存储成功
+
+BONDS = select * , strReplace(string(TRADE_DT), ".", "") from BONDS
+BONDS.dropColumns!(`TRADE_DT)
+BONDS.rename!(`strReplace, `TRADE_DT)
+typestr(exec TRADE_DT from BONDS)  // 变回了string

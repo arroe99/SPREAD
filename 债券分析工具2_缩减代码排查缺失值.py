@@ -160,10 +160,18 @@ STATIC
 
 # 债券信息
 BONDS = pd.read_parquet('./Results/BONDS.parquet')
+print(BONDS.shape)
+print(BONDS.B_ANAL_MATU_CNBD.isnull().sum())
+
 BondDynamicFilters = [('B_ANAL_MATU_CNBD','<=', 10)]
 BONDS = select(BONDS,BondDynamicFilters)
 print('BONDS:', slectionString(BondDynamicFilters))   # 14837981 => 11014822
-BONDS
+print(BONDS.shape)
+print(BONDS.B_ANAL_MATU_CNBD.isnull().sum())
+
+
+BONDS[BONDS['B_ANAL_MATU_CNBD']<=10].shape
+
 
 # 国开数据
 FILLED_GUOKAI = pd.read_parquet('./Results/FILLED_GUOKAI.parquet')

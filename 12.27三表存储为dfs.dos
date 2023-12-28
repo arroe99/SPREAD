@@ -1,0 +1,99 @@
+// 已经通过Python的DDB模块将本地数据存储为了共享表
+
+
+// 删除共享表
+// undef(`STATIC_shared, objType = SHARED)
+// undef(`BONDS_shared, objType = SHARED)
+// undef(`FILLED_GUOKAI_shared, objType = SHARED)
+
+
+// TRY
+// // 按B_INFO_CARRYDATE分区
+// db = database('dfs://temp', VALUE, 1996.01M..2023.12M)
+// // STATIC_shared['B_INFO_CARRYDATE'] = temporalParse(STATIC_shared['B_INFO_CARRYDATE'],"yyyyMMdd")
+// STATIC = select * , temporalParse(B_INFO_CARRYDATE, "yyyyMMdd") as B_INFO_CARRYDATE2 from STATIC_shared
+// pt1 = db.createPartitionedTable(STATIC, `pt1, `B_INFO_CARRYDATE2)
+// pt1.append!(STATIC)
+
+// schema(STATIC_shared2)
+// typestr(STATIC_shared['B_INFO_CARRYDATE'])
+
+STATIC = STATIC_shared 
+sum(!isNull(STATIC.B_INFO_CARRYDATE))  // 只有21360  但是python里是21930？
+
+// select * from STAIC limit 10
+
+// // BOND_TYPE  分区的列不能是中文
+// if(existsDatabase("dfs://temp")){
+//     dropDatabase("dfs://temp")
+// }
+// db = database('dfs://AAA', VALUE, `产业债`城投债`金融债)
+
+// // S_INFO_EXCHMARKET
+// if(existsDatabase("dfs://AAA")){
+//     dropDatabase("dfs://AAA")
+// }
+// db = database('dfs://AAA', VALUE, NULL)
+// pt = db.createPartitionedTable(STATIC_shared, `pt, `S_INFO_EXCHMARKET)
+// pt.append!(STATIC_shared)
+
+
+
+// STATIC表的分区数据库存储
+// 按S_INFO_EXCHMARKET   LIST分区  成功！ 
+db = database("dfs://A_STATIC", LIST, [`SSE,`NIB,`SZSE,`INTEROTC`QEE`CCEE`IMEE`JXJEE`GBGEE`BJETC`XJEE`CSTC`AHSE`SHXEE`NXEE`SJZEE`NBC`]
+)
+pt = db.createPartitionedTable(STATIC_shared, `pt, `S_INFO_EXCHMARKET)
+pt.append!(STATIC_shared)
+
+STATIC = loadTable("dfs://A_STATIC",`pt)
+STATIC = select * from STATIC
+select * from STATIC limit 10  // 查验是否存储成功
+
+// GUOKAI数据
+// 根据时间TRADE_DT建立分区数据库
+db = database('dfs://A_GUOKAI', VALUE, 2010.01M..2023.12M)
+
+// 将TRADE_DT从string转成FAST DATE VECTOR
+typestr(FILLED_GUOKAI_shared['TRADE_DT'])  // 原本是string vector，应该改成时间向量
+FILLED_GUOKAI = select B_ANAL_MATU_CNBD, B_ANAL_YIELD_GUOKAI , temporalParse(TRADE_DT, "yyyyMMdd") as TRADE_DT from FILLED_GUOKAI_shared
+typestr(FILLED_GUOKAI['TRADE_DT']) 
+
+// 输入表
+pt1 = db.createPartitionedTable(FILLED_GUOKAI, `pt1, `TRADE_DT)
+pt1.append!(FILLED_GUOKAI)
+
+// 读取表  注意和原表不同了，需要把TRADE_DT从日期变回string
+pt = loadTable('dfs://A_GUOKAI',`pt1)
+select * from pt limit 10
+// update FILLED_GUOKAI set TRADE_DT = strReplace(string(TRADE_DT), ".", "")   // update失败
+// pt = select B_ANAL_MATU_CNBD, B_ANAL_YIELD_GUOKAI , strReplace(string(TRADE_DT), ".", "") as TRADE_DT from pt // 变量少时可以这样写
+
+FILLED_GUOKAI = select * , strReplace(string(TRADE_DT), ".", "") from pt
+FILLED_GUOKAI.dropColumns!(`TRADE_DT)
+FILLED_GUOKAI.rename!(`strReplace, `TRADE_DT)
+
+
+// BONDS数据
+db = database('dfs://A_BONDS', VALUE, 2010.01M..2023.12M)
+
+BONDS = BONDS_shared
+typestr(BONDS['TRADE_DT']) 
+update BONDS set TRADE_DT1 = temporalParse(TRADE_DT, "yyyyMMdd")
+BONDS.dropColumns!(`TRADE_DT)
+BONDS.rename!(`TRADE_DT1, `TRADE_DT)
+pt2 = db.createPartitionedTable(BONDS, `pt2, `TRADE_DT)
+pt2.append!(BONDS)
+undef(`BONDS)
+
+// 读取BONDS数据
+BONDS = loadTable("dfs://A_BONDS",`pt2)
+select count(*) from BONDS
+select * from BONDS limit 10  // 查验是否存储成功
+
+BONDS = select * , strReplace(string(TRADE_DT), ".", "") from BONDS
+BONDS.dropColumns!(`TRADE_DT)
+BONDS.rename!(`strReplace, `TRADE_DT)
+typestr(exec TRADE_DT from BONDS)  // 变回了string
+
+
